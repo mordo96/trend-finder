@@ -1,5 +1,8 @@
 streamlit
-pytrends
-requests
 pandas
+requests
 beautifulsoup4
+transformers
+torch
+keybert
+sentence-transformers
