@@ -3,74 +3,42 @@ import streamlit as st
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from pytrends.request import TrendReq
-import time
 import datetime
 
-st.set_page_config(page_title="Trend Finder USA ➜ ITA", layout="centered")
+st.set_page_config(page_title="Trend Finder RSS – USA ➜ ITA", layout="centered")
 st.title("🔍 Trend Finder: dagli USA all'Italia")
-st.markdown("Scopri cosa è popolare negli Stati Uniti oggi e verifica se c'è interesse anche in Italia.")
+st.markdown("Scopri i trend attuali negli Stati Uniti e verifica se sono presenti anche tra i trend italiani.")
 
-pytrends = TrendReq(hl='en-US', tz=360)
-
-# ✅ Recupero automatico dei trending topic USA via RSS
-@st.cache_data(show_spinner=False)
-def get_us_trending_searches():
-    url = "https://trends.google.com/trends/trendingsearches/daily/rss?geo=US"
+# ✅ Recupera trending topic via Google Trends RSS
+def get_trending_keywords_rss(geo="US"):
+    url = f"https://trends.google.com/trends/trendingsearches/daily/rss?geo={geo}"
     response = requests.get(url)
     soup = BeautifulSoup(response.content, 'xml')
-    titles = soup.find_all('title')[1:]  # Salta il titolo del feed
-    keywords = [title.text for title in titles][:10]
+    titles = soup.find_all('title')[1:]  # salta il primo <title> (titolo del feed)
+    keywords = [title.text.strip() for title in titles][:20]
     return keywords
 
-# ✅ Confronto con interesse in Italia
-def compare_interest(keyword):
-    time.sleep(2)
-    try:
-        pytrends.build_payload([keyword], cat=0, timeframe='today 3-m', geo='IT', gprop='')
-        df = pytrends.interest_over_time()
-        return df[[keyword]] if not df.empty else None
-    except Exception:
-        return None
+if st.button("🔁 Analizza trend ora"):
+    trends_usa = get_trending_keywords_rss("US")
+    trends_ita = get_trending_keywords_rss("IT")
 
-# ✅ Trova store Shopify
-@st.cache_data(show_spinner=False)
-def find_shopify_stores(keyword):
-    headers = {"User-Agent": "Mozilla/5.0"}
-    query = f'{keyword} site:myshopify.com'
-    url = f'https://www.google.com/search?q={query}'
-    response = requests.get(url, headers=headers)
-    soup = BeautifulSoup(response.text, 'html.parser')
-    links = [a['href'] for a in soup.select('a[href^="http"]') if "myshopify.com" in a['href']]
-    return links[:5]
-
-if st.button("🔁 Trova trend ora"):
-    trends = get_us_trending_searches()
     st.subheader("📈 Trend attuali negli USA")
-    st.write(trends)
+    st.write(trends_usa)
 
+    st.subheader("🇮🇹 Presenti anche in Italia?")
     results = []
 
-    for keyword in trends:
-        with st.spinner(f"Analisi per: {keyword}"):
-            trend_data = compare_interest(keyword)
-            if trend_data is not None:
-                mean_val = trend_data[keyword].mean()
-                shopify_sites = find_shopify_stores(keyword)
-                results.append({
-                    "Keyword": keyword,
-                    "Interesse Medio in Italia": round(mean_val, 2),
-                    "Shopify trovati": ", ".join(shopify_sites)
-                })
-                st.subheader(f"📊 Interesse in Italia per: {keyword}")
-                st.line_chart(trend_data)
-            else:
-                st.warning(f"Nessun dato disponibile per '{keyword}' o richiesta bloccata.")
+    for keyword in trends_usa:
+        is_in_italy = keyword in trends_ita
+        results.append({
+            "Keyword": keyword,
+            "Presente in Italia": "✅ Sì" if is_in_italy else "❌ No"
+        })
 
-    df_out = pd.DataFrame(results)
-    if not df_out.empty:
-        st.subheader("📄 Riepilogo finale")
-        st.dataframe(df_out)
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"trend_analysis_{timestamp}.csv"
-        st.download_button("📥 Scarica CSV", data=df_out.to_csv(index=False), file_name=filename, mime="text/csv")
+    df_result = pd.DataFrame(results)
+    st.dataframe(df_result)
+
+    # CSV download
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"rss_trend_comparison_{timestamp}.csv"
+    st.download_button("📥 Scarica risultati", data=df_result.to_csv(index=False), file_name=filename, mime="text/csv")
