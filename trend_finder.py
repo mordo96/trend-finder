@@ -5,11 +5,25 @@ import requests
 from bs4 import BeautifulSoup
 import datetime
 
-st.set_page_config(page_title="Trend Finder Fallback – USA ➜ ITA", layout="centered")
-st.title("🔍 Trend Finder (con fallback)")
-st.markdown("Questa versione utilizza i feed ufficiali di Google Trends se disponibili, altrimenti una lista di trend attuali stimati.")
+# Moduli AI gratuiti
+from transformers import pipeline
+from keybert import KeyBERT
 
-# Lista alternativa precompilata
+st.set_page_config(page_title="Trend Finder + AI Open Source", layout="centered")
+st.title("🔍 Trend Finder con AI Gratuita")
+st.markdown("Analizza trend dagli USA e arricchiscili con AI open-source locale (classificazione, keyword, traduzione).")
+
+# 🔧 Inizializza modelli
+@st.cache_resource
+def load_ai_models():
+    classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
+    translator = pipeline("translation_en_to_it", model="Helsinki-NLP/opus-mt-en-it")
+    keyword_extractor = KeyBERT()
+    return classifier, translator, keyword_extractor
+
+classifier, translator, keyword_extractor = load_ai_models()
+
+# Lista fallback di trend USA
 DEFAULT_US_TRENDS = [
     "Adidas Samba",
     "Nike Air Max",
@@ -23,56 +37,37 @@ DEFAULT_US_TRENDS = [
     "Salomon XT-6"
 ]
 
-DEFAULT_IT_TRENDS = [
-    "Puma",
-    "Nike Air Max",
-    "Saldi estivi",
-    "Scarpe comode",
-    "Hoka donna",
-    "New Balance",
-    "Moda estate 2025",
-    "Loafers donna",
-    "Scarpe eleganti",
-    "Sandali platform"
-]
+if st.button("🔁 Analizza trend con AI"):
+    candidate_labels = ["fashion", "technology", "fitness", "lifestyle", "streetwear", "sneakers"]
 
-# Funzione che tenta di leggere il feed, ma ha fallback
-def get_trending_keywords_rss(geo="US"):
-    url = f"https://trends.google.com/trends/trendingsearches/daily/rss?geo={geo}"
-    try:
-        response = requests.get(url, timeout=5)
-        if response.status_code != 200:
-            st.warning(f"Feed non disponibile (errore {response.status_code}). Uso lista predefinita.")
-            return DEFAULT_US_TRENDS if geo == "US" else DEFAULT_IT_TRENDS
-
-        soup = BeautifulSoup(response.content, 'xml')
-        titles = soup.find_all('title')[1:]  # salta il primo <title>
-        keywords = [title.text.strip() for title in titles][:20]
-        return keywords
-    except Exception as e:
-        st.error(f"Errore di rete: {str(e)} – Uso fallback.")
-        return DEFAULT_US_TRENDS if geo == "US" else DEFAULT_IT_TRENDS
-
-if st.button("🔁 Analizza trend ora"):
-    trends_usa = get_trending_keywords_rss("US")
-    trends_ita = get_trending_keywords_rss("IT")
-
-    st.subheader("📈 Trend attuali negli USA")
-    st.write(trends_usa)
-
-    st.subheader("🇮🇹 Presenti anche in Italia?")
     results = []
+    st.subheader("📊 Analisi trend USA (con AI)")
 
-    for keyword in trends_usa:
-        is_in_italy = keyword in trends_ita
-        results.append({
-            "Keyword": keyword,
-            "Presente in Italia": "✅ Sì" if is_in_italy else "❌ No"
-        })
+    for trend in DEFAULT_US_TRENDS:
+        with st.spinner(f"Analisi per: {trend}"):
+            # Classificazione
+            classification = classifier(trend, candidate_labels)
+            best_label = classification["labels"][0]
+            score = classification["scores"][0]
+
+            # Traduzione
+            translation = translator(trend)[0]["translation_text"]
+
+            # Keyword extraction (mock sentence)
+            keywords = keyword_extractor.extract_keywords(f"{trend} is trending in the US market", top_n=2)
+            keywords_out = ", ".join([kw[0] for kw in keywords])
+
+            results.append({
+                "Trend": trend,
+                "Categoria AI": best_label,
+                "Confidenza": f"{score:.2f}",
+                "Traduzione IT": translation,
+                "Parole Chiave": keywords_out
+            })
 
     df_result = pd.DataFrame(results)
     st.dataframe(df_result)
 
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = f"rss_fallback_trend_{timestamp}.csv"
+    filename = f"trend_ai_analysis_{timestamp}.csv"
     st.download_button("📥 Scarica risultati", data=df_result.to_csv(index=False), file_name=filename, mime="text/csv")
