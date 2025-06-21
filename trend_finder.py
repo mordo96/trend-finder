@@ -1,21 +1,27 @@
+
 import streamlit as st
-from pytrends.request import TrendReq
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
+from pytrends.request import TrendReq
+import datetime
+import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Trend Finder USA ➜ ITA", layout="centered")
-
 st.title("🔍 Trend Finder: dagli USA all'Italia")
-st.markdown("Questo strumento ti aiuta a trovare prodotti di tendenza negli Stati Uniti e verificarne il potenziale in Italia.")
+st.markdown("Questa app individua i trend attuali negli Stati Uniti e verifica se sono popolari anche in Italia.")
 
-# Initialize pytrends
 pytrends = TrendReq(hl='en-US', tz=360)
 
+# ✅ Funzione aggiornata: prende trending keyword da Google Trends RSS (no API pytrends)
 @st.cache_data(show_spinner=False)
 def get_us_trending_searches():
-    df = pytrends.trending_searches(pn='united_states')
-    return df[0].tolist()
+    url = "https://trends.google.com/trends/trendingsearches/daily/rss?geo=US"
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'xml')
+    titles = soup.find_all('title')[1:]  # Salta il primo <title> (titolo del feed)
+    keywords = [title.text for title in titles][:10]
+    return keywords
 
 @st.cache_data(show_spinner=False)
 def compare_interest(keyword):
@@ -36,10 +42,11 @@ def find_shopify_stores(keyword):
 if st.button("🔁 Trova trend ora"):
     trends = get_us_trending_searches()
     st.subheader("📈 Trend USA attuali")
-    st.write(trends[:10])
+    st.write(trends)
 
     results = []
-    for keyword in trends[:10]:
+
+    for keyword in trends:
         with st.spinner(f"Analisi per: {keyword}"):
             trend_data = compare_interest(keyword)
             if trend_data is not None:
@@ -51,7 +58,15 @@ if st.button("🔁 Trova trend ora"):
                     "Shopify trovati": ", ".join(shopify_sites)
                 })
 
+                # 🔍 Visualizza grafico temporale per ogni keyword
+                st.subheader(f"📊 Interesse in Italia per: {keyword}")
+                st.line_chart(trend_data)
+
     df_out = pd.DataFrame(results)
-    st.subheader("📊 Risultati dell'analisi")
+    st.subheader("📄 Riepilogo Analisi")
     st.dataframe(df_out)
-    st.download_button("📥 Scarica CSV", data=df_out.to_csv(index=False), file_name="trend_analysis.csv", mime="text/csv")
+
+    # 🗃️ Salvataggio CSV con timestamp
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"trend_analysis_{timestamp}.csv"
+    st.download_button("📥 Scarica CSV", data=df_out.to_csv(index=False), file_name=filename, mime="text/csv")
