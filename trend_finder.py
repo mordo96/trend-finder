@@ -24,10 +24,15 @@ def get_us_trending_searches():
     return keywords
 
 @st.cache_data(show_spinner=False)
+
 def compare_interest(keyword):
-    pytrends.build_payload([keyword], cat=0, timeframe='today 3-m', geo='IT', gprop='')
-    df = pytrends.interest_over_time()
-    return df[[keyword]] if not df.empty else None
+    time.sleep(2)  # attende per evitare rate limit
+    try:
+        pytrends.build_payload([keyword], cat=0, timeframe='today 3-m', geo='IT', gprop='')
+        df = pytrends.interest_over_time()
+        return df[[keyword]] if not df.empty else None
+    except Exception as e:
+        return pd.DataFrame({keyword: []})  # evita crash restituendo dati vuoti
 
 @st.cache_data(show_spinner=False)
 def find_shopify_stores(keyword):
